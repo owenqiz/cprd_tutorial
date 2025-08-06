@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="ZHANG Qi" />
+
+<meta name="date" content="2025-08-06" />
+
+<title>CPRD Aurum Tutorial with R</title>
+
+<script src="site_libs/header-attrs-2.29/header-attrs.js"></script>
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.13.2/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<link href="site_libs/highlightjs-9.12.0/default.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark the anchor link active (and if it's in a dropdown, also mark that active)
+  var dropdown = menuAnchor.closest('li.dropdown');
+  if (window.bootstrap) { // Bootstrap 4+
+    menuAnchor.addClass('active');
+    dropdown.find('> .dropdown-toggle').addClass('active');
+  } else { // Bootstrap 3
+    menuAnchor.parent().addClass('active');
+    dropdown.addClass('active');
+  }
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-bs-toggle="collapse" data-target="#navbar" data-bs-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">CPRD Tutorial</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Readme</a>
+</li>
+<li>
+  <a href="cprd_aurum_sas.html">Aurum SAS</a>
+</li>
+<li>
+  <a href="cprd_aurum_r.html">Aurum R</a>
+</li>
+<li>
+  <a href="cprd_gold_r.html">GOLD R</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">CPRD Aurum Tutorial with R</h1>
+<h4 class="author">ZHANG Qi</h4>
+<h4 class="date">August 06, 2025</h4>
+
+</div>
+
+
+<p>The <strong>CPRD Aurum</strong> (Clinical Practice Research Datalink
+Aurum is a UK-based primary care electronic health record (EHR) dataset.
+It captures detailed longitudinal patient-level information collected
+from general practices, derived from <strong>EMIS</strong> Web GP
+software systems.</p>
+<div id="cprd-aurum-data-structure" class="section level1">
+<h1>CPRD Aurum Data Structure</h1>
+<p>The dataset is organized into multiple <strong>relational
+tables</strong>, some major tables are,</p>
+<table>
+<thead>
+<tr class="header">
+<th>Table Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Patient</code></td>
+<td>One row per patient with demographics</td>
+</tr>
+<tr class="even">
+<td><code>Practice</code></td>
+<td>Information on general practice</td>
+</tr>
+<tr class="odd">
+<td><code>Consultation</code></td>
+<td>Records of consultations (phone call, GP visit)</td>
+</tr>
+<tr class="even">
+<td><code>Observation</code></td>
+<td>Coded clinical information (diagnoses, labs)</td>
+</tr>
+<tr class="odd">
+<td><code>Therapy</code></td>
+<td>Prescriptions issued to patients</td>
+</tr>
+</tbody>
+</table>
+<p>Other tables such as, <code>Problem</code>, <code>Referral</code>,
+<code>Staff</code>, please refer to the data specification.</p>
+<div id="major-interested-columns" class="section level2">
+<h2>Major interested columns</h2>
+<p>For the above tables, we are mainly interested in the following
+columns,</p>
+<table>
+<colgroup>
+<col width="24%" />
+<col width="75%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Table Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Patient</code></td>
+<td><code>id</code>, <code>practice</code>, <code>male</code>,
+<code>yob</code>, <code>regstart</code>, <code>regend</code>,
+<code>emis_dod</code>, <code>cprd_dod</code>,
+<code>acceptable</code></td>
+</tr>
+<tr class="even">
+<td><code>Practice</code></td>
+<td><code>practice</code>, <code>region</code>, <code>lcd</code></td>
+</tr>
+<tr class="odd">
+<td><code>Consultation</code></td>
+<td><code>id</code>, <code>date</code>, <code>medical_code</code></td>
+</tr>
+<tr class="even">
+<td><code>Observation</code></td>
+<td><code>id</code>, <code>date</code>, <code>medical_code</code>,
+optional = {<code>value</code>, <code>unit</code>,
+<code>rangelow</code>, <code>rangehigh</code>}</td>
+</tr>
+<tr class="odd">
+<td><code>Therapy</code></td>
+<td><code>id</code>, <code>date</code>, <code>product_code</code>,
+<code>quantunit</code>, <code>duration</code>, <code>dosageid</code>,
+<code>qty</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="note" class="section level2">
+<h2>Note:</h2>
+<ul>
+<li>Patient
+<ul>
+<li>regstart: Date that the patient registered in CPRD.</li>
+<li>regend: Date that the patient ended registration in CPRD, may due to
+transfer out or death.</li>
+<li>emis_dod, cprd_dod: Date that the patient is dead (if applicable),
+recommended to use cprd_dod.</li>
+<li>acceptable: valid patient record should have acceptable = 1.</li>
+</ul></li>
+<li>Practice
+<ul>
+<li>lcd: Last collection date, most recent CPRD data collection for the
+practice.</li>
+</ul></li>
+<li>Consultation
+<ul>
+<li>medical_code: code list are obtained from code browser, should be
+prepared before data manipulation.</li>
+</ul></li>
+<li>Observation
+<ul>
+<li>medical_code: code list are obtained from code browser, should be
+prepared before data manipulation.</li>
+<li>value, unit, rangelow, rangehigh: this are related to lab test, unit
+should go to <code>NumUnit.txt</code>.</li>
+</ul></li>
+<li>Therapy
+<ul>
+<li>product_code: code list are obtained from code browser, should be
+prepared before data manipulation.</li>
+<li>duration, qty: it is used to determine the treatment length, should
+also use <code>dosageid</code> as auxiliary info.</li>
+<li>dosageid: text info about dosage, along with the duration and qty,
+we derive <code>daily_dose</code>.</li>
+</ul></li>
+</ul>
+</div>
+</div>
+<div id="examples-and-common-manipulations" class="section level1">
+<h1>Examples and common manipulations</h1>
+<div id="import-code-list" class="section level2">
+<h2>Import code list</h2>
+<p>In this tutorial, we maiinly use <code>tidyverse</code> series,
+including <code>dplyr</code>, <code>lubridate</code>, <code>purrr</code>
+etc, <code>data.table</code> is much faster, but
+<code>tidyverse</code>’s syntax is more readable.</p>
+<p>To import text files into R, we may use packages such as
+<code>readr</code>, <code>readxl</code>. But to read SAS file into R, we
+need <code>haven</code> package.</p>
+<pre class="r"><code>setwd(&quot;X:/Aurum/Data&quot;)
+patient1 &lt;- haven::read_sas(&#39;patient1.sas7bdat&#39;)</code></pre>
+</div>
+<div id="patient-and-practice" class="section level2">
+<h2>Patient and Practice</h2>
+<p>We usually join patient and practice information together, because we
+need <code>lcd</code> from the practice to determine the initial
+end-of-follow-up (eof) date. The initial eof <strong>without</strong>
+considering event date is usually the minimum date of {lcd, regend,
+cprd_dod, study_end}.</p>
+<pre class="r"><code>#  Creates the &#39;patient&#39; table by joining patient and practice data.
+#  Calculates the registration end date (regend) as the earliest of the
+#  original end date, death date, the practice&#39;s last collection date, or March 31, 2021.
+
+library(dplyr)
+
+patient &lt;- patient1 %&gt;%
+  inner_join(practice1, by = &quot;practice&quot;) %&gt;%
+  mutate(regend = pmin(regend, cprd_dod, lcd, as.Date(&quot;2021-03-31&quot;), na.rm = TRUE)) %&gt;%
+  select(id, practice, male, yob, regstart, regend)</code></pre>
+</div>
+<div id="diagnosis-and-clinical-measurement-labs"
+class="section level2">
+<h2>Diagnosis and Clinical Measurement (Labs)</h2>
+<p>For diagnosis, we only need their <code>medical_code</code>, for
+clinical measurement (labs) such as blood pressure, we also need to
+obtain their values, units and ranges. We usually write a <strong>R
+function</strong> to make our work easy to modified and maintained. In
+this example, we use <code>purrr</code> package to allow vectorization
+to improve efficiency.</p>
+<pre class="r"><code># Universal function to extract medical_code records in consultation and observation.
+# It filters records on a definition table and joins them with patient data.
+# It combines all matching records and deletes the temporary tables.
+
+library(dplyr)
+library(purrr)
+
+sick_code &lt;- function(n_con, n_obs, def_tbl, pat_tbl, data_name, path = &quot;.&quot;) {
+  
+  # Read and process Consultation datasets
+  cons_list &lt;- map_dfr(1:n_con, function(i) {
+    read_sas(file.path(path, paste0(&quot;consultation&quot;, i, &quot;.sas7bdat&quot;))) %&gt;%
+      inner_join(def_tbl, by = &quot;medical_code&quot;) %&gt;%
+      inner_join(pat_tbl, by = &quot;id&quot;) %&gt;%
+      select(id, date, medical_code, t0)
+  })
+  
+  # Read and process Observation datasets
+  obs_list &lt;- map_dfr(1:n_obs, function(i) {
+    read_sas(file.path(path, paste0(&quot;observation&quot;, i, &quot;.sas7bdat&quot;))) %&gt;%
+      inner_join(def_tbl, by = &quot;medical_code&quot;) %&gt;%
+      inner_join(pat_tbl, by = &quot;id&quot;) %&gt;%
+      select(id, date, medical_code, t0)
+  })
+  
+  # Combine and arrange
+  final_df &lt;- bind_rows(cons_list, obs_list) %&gt;% arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}</code></pre>
+<p>And and an example call of this function is as follows,</p>
+<pre class="r"><code>sick_code(n_con = 2, n_obs = 2, 
+          def_tbl = dialysis, pat_tbl = patient, data_name = &quot;pat_dialysis&quot;)</code></pre>
+</div>
+<div id="prescription-therapy" class="section level2">
+<h2>Prescription (Therapy)</h2>
+<p>For therapy, we usually need the treatment duration related
+information if we need to perform as treated method and eof due to
+discontinuation. If we do initial filtering, we find patients that meet
+specific criterion, so we don’t specify id. When filtering during
+exclusion, we exclude patient who has prescribed specific drugs, and
+that we need id. Therefore, in the function, we also need another
+argument <code>pat_tbl</code> say we need
+<code>inner_join(pat_tbl, by = "id")</code> as well.</p>
+<pre class="r"><code># This function extracts therapy records for specific drugs from a series of files.
+# It filters records using a provided list of product codes, combines the results
+# into a single dataset, and deletes the temporary tables.
+# if pat_tbl is used (uncomment), we need a new argument to include patient info
+
+drug &lt;- function(n_ther, def_tbl, data_name, path = &quot;.&quot;) {
+  
+  # Read and process Therapy datasets
+  ther_list &lt;- map_dfr(1:n_ther, function(i) {
+    read_sas(file.path(path, paste0(&quot;therapy&quot;, i, &quot;.sas7bdat&quot;))) %&gt;%
+      inner_join(def_tbl, by = &quot;product_code&quot;) %&gt;%
+      # inner_join(pat_tbl, by = &quot;id&quot;) %&gt;%
+      select(id, date, product_code, quantunit, duration, qty, dosageid)
+  })
+  
+  # Combine and arrange
+  final_df &lt;- bind_rows(ther_list) %&gt;% arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}</code></pre>
+</div>
+</div>
+<div id="frequently-used-programs" class="section level1">
+<h1>Frequently Used Programs</h1>
+<div id="first-treatment-within-specific-period" class="section level2">
+<h2>First treatment within specific period</h2>
+<p>Suppose we have prescription on metformin between 2000-2020, say
+<code>prodcode_metformin</code>. We want to find first treatment and
+define t0, we do pipeline operation using <code>dplyr</code>
+package,</p>
+<pre class="r"><code>first_trt &lt;- prodcode_metformin %&gt;% 
+  group_by(id) %&gt;% 
+  arrange(id, date) %&gt;% 
+  slice_head(n = 1) %&gt;% 
+  rename(t0 = date)</code></pre>
+<p>Note that the above method does NOT handle the situation when there
+are two different drugs on the same date that happen to be the minimum
+date. To handle this, we can use <code>filter</code> along with
+<code>group_by</code>, <code>ungroup</code>, to achieve this,</p>
+<pre class="r"><code>entry_trt &lt;- antidiabetic %&gt;%
+  group_by(id) %&gt;%
+  filter(date == min(date)) %&gt;%
+  ungroup() %&gt;%
+  rename(t0 = date)</code></pre>
+</div>
+<div id="dealing-with-time-related-manipulation" class="section level2">
+<h2>Dealing with Time Related Manipulation</h2>
+<p>When dealing with time related manipulation, we use the package
+<code>lubridate</code>, below is an example of filtering within a look
+back period,</p>
+<pre class="r"><code># Selecting patienet who has diagnosis within 6 month before t0
+# for date arithmetic
+library(lubridate)  
+
+ids_pcos &lt;- medcode_pcos %&gt;%
+  filter(date &gt;= (t0 %m-% months(6)) &amp; date &lt; t0) %&gt;% distinct(id)</code></pre>
+<p>Some other common date related operations are,</p>
+<pre class="r"><code># generate sequence of dates
+seq_dates &lt;- seq(from = t0, to = eof, by = &quot;1 month&quot;)
+
+# find last day of the month
+last_day &lt;- ceiling_date(x, unit = &quot;month&quot;) - days(1)
+
+# find specific date of each month
+date_15 &lt;- make_date(year(x), month(x), 15)</code></pre>
+</div>
+<div id="merging-data" class="section level2">
+<h2>Merging data</h2>
+<p>Merging data is used mainly in 2 situation, one is to combine
+existing dataset according to certain keys, another is performing
+exclusion step, where we exclude certain patients according a list of
+ids.</p>
+<p>In <code>dplyr</code> we can use various join functions to complete
+the task, <code>left_join</code> and <code>anti_join</code> are commonly
+used,</p>
+<pre class="r"><code># Merging dosage information from CPRD lookup &quot;dosage&quot; to data
+
+antihypertensive_dosage &lt;- antihypertensive %&gt;% left_join(dosage, by = &quot;dosageid&quot;)
+
+# Exclude patients with id in dialysis_ids to output
+
+pat_dialysis_exclude &lt;- patient %&gt;% anti_join(dialysis_ids, by = &#39;id&#39;)</code></pre>
+<p>When merging multiple prescriptions or comorbidities as binary,
+<code>as.integer</code> along with <code>%in%</code> is a concise way to
+do it,</p>
+<pre class="r"><code># Merge cohort with alcohol and pcos by id; keep only records from cohort;
+# create flags indicating presence in alcohol and pcos datasets
+
+cohort_covar &lt;- cohort %&gt;%
+  mutate(
+    alcohol = as.integer(id %in% alcohol$id),
+    pcos    = as.integer(id %in% pcos$id)
+    )</code></pre>
+</div>
+</div>
+<div id="tips-for-analysis" class="section level1">
+<h1>Tips for Analysis</h1>
+<ul>
+<li>Always parse <strong>dates</strong> carefully.</li>
+</ul>
+</div>
+<div id="references" class="section level1">
+<h1>References</h1>
+<ul>
+<li><a
+href="https://www.cprd.com/sites/default/files/2022-02/CPRD%20Aurum%20Data%20Specification%20v2.7%20%28002%29.pdf">CPRD
+Aurum Data Specification verson 2.7, January 22, 2022</a></li>
+</ul>
+<hr />
+<p><em>This is a very basic tutorial, it may subject to change depending
+on the project. It is recommended to read through the Data Specification
+for advanced manipulation.</em></p>
+</div>
+
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

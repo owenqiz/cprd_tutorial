@@ -1,0 +1,19 @@
+name: "cprd_tutorial"
+output_dir: "docs"
+navbar:
+  title: "CPRD Tutorial"
+  left:
+    - text: "Readme"
+      href: index.html
+    - text: "Aurum SAS"
+      href: cprd_aurum_sas.html
+    - text: "Aurum R"
+      href: cprd_aurum_r.html
+    - text: "GOLD R"
+      href: cprd_gold_r.html
+
+output:
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true

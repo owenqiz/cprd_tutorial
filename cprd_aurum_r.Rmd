@@ -1,0 +1,255 @@
+---
+title: "CPRD Aurum Tutorial with R"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+#date: "August 18, 2025"
+author: "ZHANG Qi"
+---
+
+The **CPRD Aurum** (Clinical Practice Research Datalink Aurum is a UK-based primary care electronic health record (EHR) dataset. It captures detailed longitudinal patient-level information collected from general practices, derived from **EMIS** Web GP software systems.
+
+# CPRD Aurum Data Structure
+
+The dataset is organized into multiple **relational tables**, some major tables are,
+
+| Table Name     | Description                                      |
+| -------------- | --------------------------------------------     |
+| `Patient`      | One row per patient with demographics            |
+| `Practice`     | Information on general practice                  |
+| `Consultation` | Records of consultations (phone call, GP visit)  |
+| `Observation`  | Coded clinical information (diagnoses, labs)     |
+| `Therapy`      | Prescriptions issued to patients                 |
+
+Other tables such as, `Problem`, `Referral`, `Staff`, please refer to the data specification.
+
+## Major interested columns
+
+For the above tables, we are mainly interested in the following columns,
+
+| Table Name     | Description                                                              |
+| -------------- | --------------------------------------------                             |
+| `Patient`      | `id`, `practice`, `male`, `yob`, `regstart`, `regend`, `emis_dod`, `cprd_dod`, `acceptable`|
+| `Practice`     | `practice`, `region`, `lcd`                                                    |
+| `Consultation` | `id`, `date`, `medical_code`                                                   |
+| `Observation`  | `id`, `date`, `medical_code`, optional = {`value`, `unit`, `rangelow`, `rangehigh`}    |
+| `Therapy`      | `id`, `date`, `product_code`, `quantunit`, `duration`, `dosageid`, `qty`               |
+
+
+## Note:
+* Patient
+  + regstart: Date that the patient registered in CPRD.
+  + regend: Date that the patient ended registration in CPRD, may due to transfer out or death.
+  + emis_dod, cprd_dod: Date that the patient is dead (if applicable), recommended to use cprd_dod.
+  + acceptable: valid patient record should have acceptable = 1.
+* Practice
+    + lcd: Last collection date, most recent CPRD data collection for the practice.
+* Consultation
+  + medical_code: code list are obtained from code browser, should be prepared before data manipulation.
+* Observation
+  + medical_code: code list are obtained from code browser, should be prepared before data manipulation.
+  + value, unit, rangelow, rangehigh: this are related to lab test, unit should go to `NumUnit.txt`.
+* Therapy
+  + product_code: code list are obtained from code browser, should be prepared before data manipulation.
+  + duration, qty: it is used to determine the treatment length, should also use `dosageid` as auxiliary info.
+  + dosageid: text info about dosage, along with the duration and qty, we derive `daily_dose`.
+
+# Examples and common manipulations
+
+## Import code list
+
+In this tutorial, we maiinly use `tidyverse` series, including `dplyr`, `lubridate`, `purrr` etc, `data.table` is much faster, but `tidyverse`'s syntax is more readable.
+
+To import text files into R, we may use packages such as `readr`, `readxl`. But to read SAS file into R, we need `haven` package.
+
+```{r, eval = FALSE}
+setwd("X:/Aurum/Data")
+patient1 <- haven::read_sas('patient1.sas7bdat')
+```
+
+## Patient and Practice
+
+We usually join patient and practice information together, because we need `lcd` from the practice to determine the initial end-of-follow-up (eof) date. The initial eof **without** considering event date is usually the minimum date of {lcd, regend, cprd_dod, study_end}.
+
+```{r, eval = FALSE}
+#  Creates the 'patient' table by joining patient and practice data.
+#  Calculates the registration end date (regend) as the earliest of the
+#  original end date, death date, the practice's last collection date, or March 31, 2021.
+
+library(dplyr)
+
+patient <- patient1 %>%
+  inner_join(practice1, by = "practice") %>%
+  mutate(regend = pmin(regend, cprd_dod, lcd, as.Date("2021-03-31"), na.rm = TRUE)) %>%
+  select(id, practice, male, yob, regstart, regend)
+```
+
+## Diagnosis and Clinical Measurement (Labs)
+
+For diagnosis, we only need their `medical_code`, for clinical measurement (labs) such as blood pressure, we also need to obtain their values, units and ranges. We usually write a **R function** to make our work easy to modified and maintained. In this example, we use `purrr` package to allow vectorization to improve efficiency.
+
+```{r, eval = FALSE}
+# Universal function to extract medical_code records in consultation and observation.
+# It filters records on a definition table and joins them with patient data.
+# It combines all matching records and deletes the temporary tables.
+
+library(dplyr)
+library(purrr)
+
+sick_code <- function(n_con, n_obs, def_tbl, pat_tbl, data_name, path = ".") {
+  
+  # Read and process Consultation datasets
+  cons_list <- map_dfr(1:n_con, function(i) {
+    read_sas(file.path(path, paste0("consultation", i, ".sas7bdat"))) %>%
+      inner_join(def_tbl, by = "medical_code") %>%
+      inner_join(pat_tbl, by = "id") %>%
+      select(id, date, medical_code, t0)
+  })
+  
+  # Read and process Observation datasets
+  obs_list <- map_dfr(1:n_obs, function(i) {
+    read_sas(file.path(path, paste0("observation", i, ".sas7bdat"))) %>%
+      inner_join(def_tbl, by = "medical_code") %>%
+      inner_join(pat_tbl, by = "id") %>%
+      select(id, date, medical_code, t0)
+  })
+  
+  # Combine and arrange
+  final_df <- bind_rows(cons_list, obs_list) %>% arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+```
+
+And and an example call of this function is as follows,
+
+```{r, eval = FALSE}
+sick_code(n_con = 2, n_obs = 2, 
+          def_tbl = dialysis, pat_tbl = patient, data_name = "pat_dialysis")
+
+```
+
+## Prescription (Therapy)
+
+For therapy, we usually need the treatment duration related information if we need to perform as treated method and eof due to discontinuation.
+If we do initial filtering, we find patients that meet specific criterion, so we don't specify id. 
+When filtering during exclusion, we exclude patient who has prescribed specific drugs, and that we need id. Therefore, in the function, we also need another argument `pat_tbl` say we need `inner_join(pat_tbl, by = "id") ` as well.
+
+```{r, eval = FALSE}
+
+# This function extracts therapy records for specific drugs from a series of files.
+# It filters records using a provided list of product codes, combines the results
+# into a single dataset, and deletes the temporary tables.
+# if pat_tbl is used (uncomment), we need a new argument to include patient info
+
+drug <- function(n_ther, def_tbl, data_name, path = ".") {
+  
+  # Read and process Therapy datasets
+  ther_list <- map_dfr(1:n_ther, function(i) {
+    read_sas(file.path(path, paste0("therapy", i, ".sas7bdat"))) %>%
+      inner_join(def_tbl, by = "product_code") %>%
+      # inner_join(pat_tbl, by = "id") %>%
+      select(id, date, product_code, quantunit, duration, qty, dosageid)
+  })
+  
+  # Combine and arrange
+  final_df <- bind_rows(ther_list) %>% arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+```
+
+# Frequently Used Programs
+
+## First treatment within specific period
+
+Suppose we have prescription on metformin between 2000-2020, say `prodcode_metformin`. We want to find first treatment and define t0, we do pipeline operation using `dplyr` package,
+
+```{r, eval = FALSE}
+first_trt <- prodcode_metformin %>% 
+  group_by(id) %>% 
+  arrange(id, date) %>% 
+  slice_head(n = 1) %>% 
+  rename(t0 = date)
+```
+
+Note that the above method does NOT handle the situation when there are two different drugs on the same date that happen to be the minimum date. To handle this, we can use `filter` along with `group_by`, `ungroup`, to achieve this,
+
+
+```{r, eval = FALSE}
+entry_trt <- antidiabetic %>%
+  group_by(id) %>%
+  filter(date == min(date)) %>%
+  ungroup() %>%
+  rename(t0 = date)
+```
+
+
+## Dealing with Time Related Manipulation
+
+When dealing with time related manipulation, we use the package `lubridate`, below is an example of filtering within a look back period,
+
+```{r, eval = FALSE}
+# Selecting patienet who has diagnosis within 6 month before t0
+# for date arithmetic
+library(lubridate)  
+
+ids_pcos <- medcode_pcos %>%
+  filter(date >= (t0 %m-% months(6)) & date < t0) %>% distinct(id)
+```
+
+Some other common date related operations are,
+
+```{r, eval = FALSE}
+# generate sequence of dates
+seq_dates <- seq(from = t0, to = eof, by = "1 month")
+
+# find last day of the month
+last_day <- ceiling_date(x, unit = "month") - days(1)
+
+# find specific date of each month
+date_15 <- make_date(year(x), month(x), 15)
+```
+
+## Merging data
+
+Merging data is used mainly in 2 situation, one is to combine existing dataset according to certain keys, another is performing exclusion step, where we exclude certain patients according a list of ids. 
+
+In `dplyr` we can use various join functions to complete the task, `left_join` and `anti_join` are commonly used, 
+
+```{r, eval = FALSE}
+# Merging dosage information from CPRD lookup "dosage" to data
+
+antihypertensive_dosage <- antihypertensive %>% left_join(dosage, by = "dosageid")
+
+# Exclude patients with id in dialysis_ids to output
+
+pat_dialysis_exclude <- patient %>% anti_join(dialysis_ids, by = 'id')
+
+```
+
+When merging multiple prescriptions or comorbidities as binary, `as.integer` along with `%in%` is a concise way to do it,
+
+```{r, eval = FALSE}
+# Merge cohort with alcohol and pcos by id; keep only records from cohort;
+# create flags indicating presence in alcohol and pcos datasets
+
+cohort_covar <- cohort %>%
+  mutate(
+    alcohol = as.integer(id %in% alcohol$id),
+    pcos    = as.integer(id %in% pcos$id)
+    )
+```
+
+# Tips for Analysis
+
+- Always parse **dates** carefully.
+
+
+# References
+
+- [CPRD Aurum Data Specification verson 2.7, January 22, 2022 ](https://www.cprd.com/sites/default/files/2022-02/CPRD%20Aurum%20Data%20Specification%20v2.7%20%28002%29.pdf)
+
+---
+
+*This is a very basic tutorial, it may subject to change depending on the project. It is recommended to read through the Data Specification for advanced manipulation.*

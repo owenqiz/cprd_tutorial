@@ -1,0 +1,13 @@
+---
+title: "CPRD Tutorial"
+---
+
+Hello,
+
+This website offers a **simple tutorial** for working with **CPRD Aurum** and **CPRD GOLD** datasets, with practical examples in both **SAS** and **R**. 
+
+Basic data structures and operations are included. More examples on data management will be considered in the future work.
+
+Use the navigation bar to explore tutorials in your preferred dataset-language version.
+
+Note: CPRD GOLD are not yet completed, stop at clinical measurments (labs)

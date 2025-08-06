@@ -1,0 +1,375 @@
+---
+title: "CPRD Aurum Tutorial with SAS"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+#date: "August 18, 2025"
+author: "ZHANG Qi"
+---
+
+The **CPRD Aurum** (Clinical Practice Research Datalink Aurum is a UK-based primary care electronic health record (EHR) dataset. It captures detailed longitudinal patient-level information collected from general practices, derived from **EMIS** Web GP software systems.
+
+# CPRD Aurum Data Structure
+
+The dataset is organized into multiple **relational tables**, some major tables are,
+
+| Table Name     | Description                                      |
+| -------------- | --------------------------------------------     |
+| `Patient`      | One row per patient with demographics            |
+| `Practice`     | Information on general practice                  |
+| `Consultation` | Records of consultations (phone call, GP visit)  |
+| `Observation`  | Coded clinical information (diagnoses, labs)     |
+| `Therapy`      | Prescriptions issued to patients                 |
+
+Other tables such as, `Problem`, `Referral`, `Staff`, please refer to the data specification.
+
+## Major interested columns
+
+For the above tables, we are mainly interested in the following columns,
+
+| Table Name     | Description                                                              |
+| -------------- | --------------------------------------------                             |
+| `Patient`      | `id`, `practice`, `male`, `yob`, `regstart`, `regend`, `emis_dod`, `cprd_dod`, `acceptable`|
+| `Practice`     | `practice`, `region`, `lcd`                                                    |
+| `Consultation` | `id`, `date`, `medical_code`                                                   |
+| `Observation`  | `id`, `date`, `medical_code`, optional = {`value`, `unit`, `rangelow`, `rangehigh`}    |
+| `Therapy`      | `id`, `date`, `product_code`, `quantunit`, `duration`, `dosageid`, `qty`               |
+
+
+## Note:
+* Patient
+  + regstart: Date that the patient registered in CPRD.
+  + regend: Date that the patient ended registration in CPRD, may due to transfer out or death.
+  + emis_dod, cprd_dod: Date that the patient is dead (if applicable), recommended to use cprd_dod.
+  + acceptable: valid patient record should have acceptable = 1.
+* Practice
+    + lcd: Last collection date, most recent CPRD data collection for the practice.
+* Consultation
+  + medical_code: code list are obtained from code browser, should be prepared before data manipulation.
+* Observation
+  + medical_code: code list are obtained from code browser, should be prepared before data manipulation.
+  + value, unit, rangelow, rangehigh: this are related to lab test, unit should go to `NumUnit.txt`.
+* Therapy
+  + product_code: code list are obtained from code browser, should be prepared before data manipulation.
+  + duration, qty: it is used to determine the treatment length, should also use `dosageid` as auxiliary info.
+  + dosageid: text info about dosage, along with the duration and qty, we derive `daily_dose`.
+
+# Examples and common manipulations
+
+For convenience, we set library from specific path to facilitate reading data files, e.g.
+```sas
+LIBNAME def "D:\your_name\project_name\definition\";
+LIBNAME Aurum "D:\your_name\project_name\raw_data\";
+LIBNAME Out "D:\your_name\project_name\output\";
+```
+
+## Import code list
+To import text files into SAS format, `sas7bdat`, we can either use built-in tools from **File -> Import Data**
+
+Or write codes manually,
+
+```sas
+/*
+  This code creates the DPP4 dataset save it under def by reading a tab-delimited file.
+  It skips the header row and imports two variables: ProdCode and ProductName.
+  Any rows with a blank ProdCode are deleted.
+*/
+
+DATA def.DPP4;
+INFILE "Z:\drugs\dpp4.txt" FIRSTOBS = 2 LRECL = 500 DELIMITER = '09'x MISSOVER DSD;
+LENGTH ProdCode $ 19. ProductName $ 100.;
+INPUT ProdCode $ ProductName $;
+IF prodcode = . THEN delete;
+RUN;
+```
+
+## Patient and Practice
+
+We usually join patient and practice information together, because we need `lcd` from the practice to determine the initial end-of-follow-up (eof) date. The initial eof **without** considering event date is usually the minimum date of {lcd, regend, cprd_dod, study_end}.
+
+```sas
+/*
+  Creates the 'patient' table by joining patient and practice data.
+  Calculates the registration end date (regend) as the earliest of the
+  original end date, death date, the practice's last collection date, or March 31, 2021.
+*/
+
+PROC SQL;
+CREATE TABLE patient AS
+SELECT p.id, p.practice, p.male, p.yob, p.regstart, 
+min(p.regend, p.cprd_dod, pr.lcd, '31MAR2021'd) as regend format = date9.
+FROM Aurum.Patient1 AS p, Aurum.Practice1 AS pr
+WHERE p.practice = pr.practice;
+QUIT;
+```
+
+## Diagnosis and Clinical Measurement (Labs)
+
+For diagnosis, we only need their `medical_code`, for clinical measurement (labs) such as blood pressure, we also need to obtain their values, units and ranges. We usually write a **SAS Macro** to make our work easy to modified and maintained.
+
+```sas
+/*
+  Universal macro to extract medical_code records in consultation and observation.
+  It filters records on a definition table and joins them with patient data.
+  It combines all matching records and deletes the temporary tables.
+*/
+
+%MACRO sick_code (n_con, n_obs, def_tbl, pat_tbl, data_name);
+
+%DO i = 1 %TO &n_con;
+PROC SQL;
+CREATE TABLE d_consultation&i AS
+	SELECT c.id, c.date, c.medical_code, p.t0 
+	FROM Aurum.Consultation&i AS c, &def_tbl AS d, &pat_tbl AS p
+	WHERE  c.medical_code = d.medical_code AND c.id = p.id
+	ORDER  id, date;
+%END;
+
+%DO i = 1 %TO &n_obs;
+PROC SQL;
+CREATE TABLE d_observation&i AS
+	SELECT ob.id, ob.date, ob.medical_code, p.t0 
+	FROM Aurum.observation&i AS ob, &def_tbl AS d, &pat_tbl AS p
+	WHERE  ob.medical_code = d.medical_code AND ob.id = p.id
+	ORDER  id, date;
+%END;
+QUIT;
+
+DATA &data_name;
+SET d_consultation1-d_consultation&n_con
+	d_observation1-d_observation&n_obs;
+BY id date;
+RUN;
+
+PROC datasets;
+DELETE d_consultation1-d_consultation&n_con
+	d_observation1-d_observation&n_obs;
+QUIT;
+RUN;
+%MEND;
+```
+
+And and an example call of this macro is as follows,
+
+```sas
+%let n_con = 10;
+%let n_obs = 20;
+
+%let def_tbl = pkd;
+%let pat_tbl = pat2;
+%let data_name = medcode_pkd;
+
+%sick_code(&n_con, &n_obs, &def_tbl, &pat_tbl, &data_name);
+
+/* OR */
+
+%sick_code (n_con = 10, n_obs = 20, 
+def_tbl = pkd, pat_tbl = pat2, data_name = medcode_pkd);
+
+```
+
+## Prescription (Therapy)
+
+For therapy, we usually need the treatment duration related information if we need to perform as treated method and eof due to discontinuation.
+If we do initial filtering, we find patients that meet specific criterion, so we don't specify id. 
+When filtering during exclusion, we exclude patient who has prescribed specific drugs, and that we need id. Therefore, in the marco, we also need another argument `pat_tbl` say, set as `p` and during SQL, we need `t.id = p.id` as well.
+
+```sas
+/*
+  This macro extracts therapy records for specific drugs from a series of files.
+  It filters records using a provided list of product codes, combines the results
+  into a single dataset, and deletes the temporary tables.
+*/
+
+%MACRO drug (n_ther, def_tbl, data_name);
+
+%DO i= 1 %TO &n_ther;
+PROC SQL;
+CREATE TABLE ther&i AS
+	SELECT t.id, t.date, t.product_code, t.quantunit, t.duration, t.qty, t.dosageid 
+	FROM Aurum.Therapy&i AS t, &def_tbl AS d
+	WHERE  t.product_code = d.product_code
+ORDER id, date;
+%END;				
+QUIT;
+
+DATA &data_name;
+SET ther1-ther&n_ther;
+BY id date;
+RUN;
+
+PROC datasets;
+DELETE ther1-ther&n_ther;
+QUIT;
+RUN;
+%MEND;
+```
+
+# Frequently Used Programs
+
+## First treatment within specific period
+
+Suppose we have prescription on metformin between 2000-2020, say `prodcode_metformin`. We want to find first treatment and define t0, we can either use `SQL` method or `DATA` method,
+
+```sas
+/*SQL method*/
+
+PROC SQL;
+CREATE TABLE first_trt AS
+SELECT id, min(date) AS t0 format = date9.
+FROM prodcode_metformin
+GROUP BY id
+ORDER BY id;
+QUIT;
+
+/*DATA method*/
+
+PROC SORT DATA = prodcode_metformin; BY id date; RUN;
+DATA frist_trt; SET prodcode_metformin(rename = (date = t0)); 
+BY id;
+IF first.id; 
+RUN;
+```
+
+Note that the above method does NOT handle the situation when there are two different drugs on the same date that happen to be the minimum date. To handle this, the SQL method is to perform inner join with itself where the date is set to minimum date and the DATA method is to first assign a temporary variable as mininum date then use the actual date to compare with them.
+
+
+```sas
+/*SQL Method*/
+
+PROC SQL;
+CREATE TABLE entry_trt AS 
+SELECT t1.id, t1.date, t1.drug
+FROM antidiabetic AS t1 
+/* Use 'antidiabetic' table and alias it as 't1' */
+INNER JOIN (
+    SELECT id, min(date) AS min_date 
+    FROM antidiabetic       
+    /* Use 'antidiabetic' table in the subquery */
+    GROUP BY id
+) AS t2                    /* Alias the subquery result as 't2' */
+ON  t1.id = t2.id AND t1.date = t2.min_date 
+/* AND the date in 't1' matches the minimum date found in 't2' */
+ORDER BY t1.id, t1.date, t1.drug;   
+/* then by drug (for consistent output if multiple drugs on same date) */
+QUIT;
+
+
+/*DATA method*/
+
+PROC SORT DATA=antidiabetic; BY id date; RUN;
+
+DATA entry_trt;
+    SET antidiabetic;
+    BY id date;
+    RETAIN min_date; 
+    /* Keep the min_date value across rows within an ID group */
+
+    IF FIRST.id THEN DO;
+        /* For the first record of each ID, its date IS the minimum date */
+        min_date = date;
+    END;
+
+    IF date = min_date; 
+    /* Output only if the current row's date matches minimum date */
+    DROP min_date; 
+    /* Remove the temporary variable*/
+RUN;
+```
+
+
+## Dealing with Time Related Manipulation
+
+When dealing with time related manipulation, we usually use `INTNX`, this can be used in both `SQL` and `DATA` method. One of advantage of `INTNX` is that it handles different time length, it would be easier to find correct dates if you want to find the date for last day of the month.
+
+```sas
+/*Selecting patienet who has diagnosis within 6 month before t0*/
+
+PROC SQL; 
+CREATE TABLE ids_pcos AS SELECT DISTINCT id 
+FROM medcode_pcos 
+WHERE INTNX('month', t0, -6, 'same') <= date < t0; 
+QUIT;
+```
+## Merging data
+
+Merging data is used mainly in 2 situation, one is to combine existing dataset according to certain keys, another is performing exclusion step, where we exclude certain patients according a list of ids. 
+
+In term of programming, `SQL` and `DATA` are applicable, but there are difference between this two method. `SQL` does not require sorting and supports flexible join conditions, duplicating rows if there are multiple matches (many-to-many). In contrast, `DATA` requires sorted data sets and matches records by position, so duplicate keys can cause values to be overwritten or missed. 
+
+Suppose we have a `patient` table with `id` and other covariates, a dataset with only `id`, indicates some comorbidities or medications to be excluded, e.g. `dialysis_ids`, we show both `SQL` and `DATA` method to achieve the exclusion, usually `DATA` step is much faster,
+
+
+```sas
+/* 
+   Exclude patients from 'patient' dataset who have an id in dialysis_ids
+   Then output into a new dataset called pat_dialysis_exclude
+   SQL method
+*/
+
+PROC SQL;
+CREATE TABLE pat_dialysis_exclude AS
+SELECT * FROM patient AS p
+WHERE p.id NOT IN (SELECT id from dialysis_ids); 
+QUIT;
+
+/* 
+   DATA method
+   We first sort the data by id, then performing merging
+*/
+
+PROC SORT DATA = patient; BY id; RUN;
+PROC SORT DATA = dialysis_ids; BY id; RUN;
+
+/*
+   Example purpose, keep only id, male in patient
+   We can use KEEP and DROP accordingly
+*/
+DATA pat_dialysis_exclude;
+MERGE patient(in = p KEEP = id male) dialysis_ids(in = d);
+BY id;
+IF p AND NOT d;
+RUn;
+```
+For merging (joining) data, we also show some example as follows,
+
+```sas
+/*Merging dosage information from CPRD lookup to data*/
+
+PROC SQL;
+CREATE TABLE antihypertensive_dosage AS
+SELECT a.*, d.* FROM antihypertensive AS a LEFT JOIN Def.Dosage AS d
+ON a.dosageid = d.dosageid;
+QUIT;
+```
+When merging multiple prescriptions or comorbidities as binary, `DATA` method is preferred.
+
+```sas
+/* 
+Merge cohort with alcohol and pcos by id; keep only records from cohort;
+create flags indicating presence in alcohol (a) and pcos (p) datasets
+*/
+
+DATA cohort_covar; MERGE cohort(in = c) alcohol(in = a) pcos(in = p); 
+BY id; IF c; 
+alcohol = a;
+pcos = p;
+RUN;
+
+DATA cohort_covar; SET  cohort_covar; 
+IF alcohol = . THEN alcohol = 0;
+IF pcos = . THEN pcos = 0;
+RUN;
+```
+
+# Tips for Analysis
+
+- Always parse **dates** carefully using the correct format.
+- Many CPRD fields can be **sparse** or missing – use `missing()` in SAS.
+- SAS reads tab-delimited files easily using `dlm='09'x`.
+
+# References
+
+- [CPRD Aurum Data Specification verson 2.7, January 22, 2022 ](https://www.cprd.com/sites/default/files/2022-02/CPRD%20Aurum%20Data%20Specification%20v2.7%20%28002%29.pdf)
+
+---
+
+*This is a very basic tutorial, it may subject to change depending on the project. It is recommended to read through the Data Specification for advanced manipulation.*

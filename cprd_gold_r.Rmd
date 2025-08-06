@@ -1,0 +1,325 @@
+---
+title: "CPRD GOLD Tutorial with R"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+#date: "August 18, 2025"
+author: "ZHANG Qi"
+---
+
+The **CPRD GOLD** (Clinical Practice Research Datalink GOLD) is a UK-based anonymized primary care electronic health record (EHR) dataset derived from general practices (GP) that use the **Vision** GP system. CPRD GOLD is preferred for longitudinal research, especially for studies starting before 2015. 
+
+While CPRD GOLD has been a gold standard for many years, it is increasingly being superseded by CPRD Aurum, which sources data from the EMIS Web system—the most widely used GP software in England. As the use of Vision declines, fewer practices contribute to GOLD, and future research may increasingly rely on CPRD Aurum for more current and comprehensive coverage of the English population.
+
+# CPRD GOLD Data Structure
+
+The dataset is organized into multiple **relational tables**, some major tables are,
+
+| Table Name     | Description                                      |
+| -------------- | --------------------------------------------     |
+| `Patient`      | One row per patient with demographics and registration details  |
+| `Practice`     | Information on general practice                  |
+| `Clinical`     | Read code coded clinical events (symptoms, signs and diagnoses)     |
+| `Additional`   | Additional clinical details, linked to `clinical` through `acdid`    |
+| `Test`         | Records of lab test, could be qualitative or quantitative, test name is identified by `entity` |
+| `Therapy`      | Prescriptions issued to patients                 |
+
+Other tables such as `Consultation`, `Immunisation`, `Referral`, `Staff` please refer to the data specification.
+
+## Major interested columns
+
+For the above tables, we are mainly interested in the following columns,
+
+| Table Name     | Description                                                              |
+| -------------- | --------------------------------------------                             |
+| `Patient`      | `id`, `male`, `yob`, `frd`, `crd`, `tod`, `toreason`, `dod`, `reggap`, `acceptable`|
+| `Practice`     | `practice`, `region`, `lcd`, `uts`                                       |
+| `Clinical`     | `id`, `date`, `medical_code`, `entity`, `acdid`                          |
+| `Additional`   | `id`, `entity`, `acdid`, `data1` ~ `data7`    |
+| `Test`         | `id`, `date`, `medical_code`, `entity`, `data1` ~ `data8`  (8 field example)  |
+| `Therapy`      | `id`, `date`, `product_code`, `qty`, `days`, `dosageid`     |
+
+
+## Note:
+* Patient
+  + id: The last 3 digit of `id` is also the id of `practice`, i.e. `practice = id %% 1000`
+  + frd: First Registration Date, the date that the patient first registered in CPRD.
+  + crd: Current Registration Date, the date that the patient registered in CPRD in current period. If the patient does not have transferred out, then `frd` = `crd`.
+  + tod: Transfer Out Date, the date that the patient out of CPRD.
+  + toreason: Reason the patient transferred out of CPRD, including 'Death' = 1 as an option.
+  + reggap: Registration gap, number of days missing in the patient’s registration details, used to determine whether to use `crd` or `frd`.
+  + dod: Date that the patient is dead.
+  + acceptable: Valid patient record should have acceptable = 1.
+* Practice
+    + practice: Used to linked patient data with calculated `practice` in patient file
+    + lcd: Last collection date, most recent CPRD data collection for the practice.
+    + uts: Up-to-standard date, the date that the practice data is valid.
+* Clinical
+  + medical_code: Code list are obtained from code browser, should be prepared before data manipulation.
+  + entity: This is an identifier for the structured data, should look for `Entity.txt` or `Entity.xls` for further detail.
+  + acdid: Along with `entity`, used to linked with `Additional` data for more detail info.
+* Additional
+  + It does NOT contain date info, it needs `acdid` to linked to either `Clinical` or `Test` for extra data info.
+  + entity: This is an identifier for the structured data, should look for `Entity.txt` or `Entity.xls` for further detail.
+  + data1 ~ data7: which cells contain needed values are various and are determined by `entity`.
+* Test
+  + It may or may not contains extra info, depending on `entity` that linked to `Additional`
+  + The data may have different data fields format = {4, 7, 8}, for 7 and 8 field format, `data2` is the value and `data3` is the unit. For details of other field, please refer to the data specification. 
+  + data8: If applicable, it is either the expected delivery date (`entity` = 284, Maternity ultra sound scan
+) or week (`entity` = 154, Alpha fetoprotein).
+* Therapy
+  + product_code: Code list are obtained from code browser, should be prepared before data manipulation.
+  + qty, days: It is used to determine the treatment length, should also use `dosageid` as auxiliary info.
+  + dosageid: Text info about dosage, along with the `qty` and `days`, we derive `daily_dose` and `duration` of the treatment.
+
+# Examples and common manipulations
+
+## Import Data
+
+In this tutorial, we mainly use `tidyverse` series, including `dplyr`, `lubridate`, `purrr` etc, `data.table` is much faster, but `tidyverse`'s syntax is more readable.
+
+To import text files, we use packages such as `readr`, `readxl`. But to read SAS format `sas7bdat`, we need `haven` package.
+
+```{r, eval = FALSE}
+setwd("X:/GOLD/Data")
+patient1 <- haven::read_sas('patient1.sas7bdat')
+```
+
+## Patient and Practice
+
+We usually join patient and practice information together by practice, because we need to calculated registration start (regstart), a valid start date for the patient’s records in GOLD, and end of follow-up date (eof) from the dates in `Patient` and `Practice` files. Specifically, we have
+
+  + `practice = id %% 1000`
+  + `regstart = max(crd, uts)`, where `crd = if_else(reggap > 30, crd, frd)`
+  + `eof = regend = min(lcd, dod, tod, study_end)`
+
+```{r, eval = FALSE}
+#  Creates the 'patient' table by joining patient1 and practice1 data.
+#  With 30-day grace period, assessing current registration date by registration gaps 
+#  Calculates the registration start (regstart) as max (crd, uts)
+#  Calculate initial regend = min (lcd, dod, tod, or March 31, 2021).
+
+library(dplyr)
+
+patient <- patient1 %>%
+  mutate(practice = id %% 1000, crd = if_else(reggap > 30, crd, frd)) %>% 
+  inner_join(practice1, by = "practice") %>%
+  mutate(regstart = pmax(crd, uts),
+    regend = pmin(lcd, dod, tod, as.Date("2021-03-31"), na.rm = TRUE)) %>%
+  select(id, practice, male, yob, regstart, eof = regend)
+```
+
+## Diagnosis and Clinical Measurement (Labs)
+
+### Diagnosis
+
+For diagnosis, we only need their `medical_code`, so we mainly loop through `Clinical`. We usually write a **R function** to make our work easy to modified and maintained. In this example, we use `purrr` package to allow vectorization to improve efficiency.
+
+```{r, eval = FALSE}
+# Universal function to extract medical_code records in clinical.
+# This does NOT include extra info, to obtain that we need entity, acdid
+# It filters records on a definition table and joins them with patient data.
+# It combines all matching records and deletes the temporary tables.
+
+library(dplyr)
+library(purrr)
+
+sick_code <- function(n_cli, def_tbl, pat_tbl, data_name, path = ".") {
+  
+  # Read and process Clinical datasets
+  cli_list <- map_dfr(1:n_cli, function(i) {
+    read_sas(file.path(path, paste0("clinical", i, ".sas7bdat"))) %>%
+      inner_join(def_tbl, by = "medical_code") %>%
+      inner_join(pat_tbl, by = "id") %>%
+      select(id, date, medical_code, entity, acdid)
+    #  for diagnosis, we do not need entity, acdid
+    # if the basic patient is built, we may include t0 as well
+  })
+
+  # Combine and arrange
+  final_df <- bind_rows(cli_list) %>% arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+```
+
+And and an example call of this function is as follows,
+
+```{r, eval = FALSE}
+sick_code(n_cli = 2, 
+          def_tbl = pu, pat_tbl = patient, data_name = "pat_pu")
+
+```
+
+### Clinical Measurement (Labs)
+
+For clinical measurement (labs) such as blood pressure, we also need to obtain their values, we may need both go through `Clinical` for extra information with {`entity`, `acdid`} then linked with `Additional` and `Test` for `entity` and `data1` ~ `data8` to obtain values. 
+
+Recall that for `Additional` file does NOT contain date info, so we need `entity` and `acdid` to linked with `Clinical` to obtain date information.
+
+
+```{r, eval = FALSE}
+# Universal function to extract medical_code and data in test.
+# It filters records on a definition table and joins them with patient data.
+# It combines all matching records and deletes the temporary tables.
+
+sick_code_tst <- function(n_tst, def_tbl, pat_tbl, data_name, path = ".") {
+  
+  # Read and process Clinical datasets
+  tst_list <- map_dfr(1:n_tst, function(i) {
+    read_sas(file.path(path, paste0("test", i, ".sas7bdat"))) %>%
+      inner_join(def_tbl, by = "medical_code") %>%
+      inner_join(pat_tbl, by = "id") %>%
+      select(id, date, medical_code, entity, starts_with("data"))
+    # if the basic patient is built, we may include t0 as well
+  })
+  
+  # Combine and arrange
+  final_df <- bind_rows(tst_list) %>%
+    arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+
+# Universal function to link between clinical and additional
+# Should linked by id, entity, acdid
+# THIS NEED TO RE-WRITE
+sick_code_add <- function(n_add, in_data, data_name, path = ".") {
+
+  # Read SAS datasets
+  add_list <- map(paste0("additional", 1:n_add, ".sas7bdat"), read_sas)
+  
+  # Join them all sequentially
+  final_df <- reduce(add_list,
+    ~ left_join(.x, .y, by = c("id", "entity", "acdid")),
+    .init = in_data
+  )
+  
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+
+sick_code_add(n_add = 2, 
+              in_data = pat_pu, data_name = "pat_pu_add")
+
+
+
+```
+
+## Prescription (Therapy)
+
+For therapy, we usually need the treatment duration related information if we need to perform as treated method and eof due to discontinuation.
+If we do initial filtering, we find patients that meet specific criterion, so we don't specify id. 
+When filtering during exclusion, we exclude patient who has prescribed specific drugs, and that we need id. Therefore, in the function, we also need another argument `pat_tbl` say we need `inner_join(pat_tbl, by = "id") ` as well.
+
+```{r, eval = FALSE}
+
+# This function extracts therapy records for specific drugs from a series of files.
+# It filters records using a provided list of product codes, combines the results
+# into a single dataset, and deletes the temporary tables.
+# if pat_tbl is used (uncomment), we need a new argument to include patient info
+
+drug <- function(n_ther, def_tbl, data_name, path = ".") {
+  
+  # Read and process Therapy datasets
+  ther_list <- map_dfr(1:n_ther, function(i) {
+    read_sas(file.path(path, paste0("therapy", i, ".sas7bdat"))) %>%
+      inner_join(def_tbl, by = "product_code") %>%
+      # inner_join(pat_tbl, by = "id") %>%
+      select(id, date, product_code, quantunit, duration, qty, dosageid)
+  })
+  
+  # Combine and arrange
+  final_df <- bind_rows(ther_list) %>% arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+```
+
+# Frequently Used Programs
+
+## First treatment within specific period
+
+Suppose we have prescription on metformin between 2000-2020, say `prodcode_metformin`. We want to find first treatment and define t0, we do pipeline operation using `dplyr` package,
+
+```{r, eval = FALSE}
+first_trt <- prodcode_metformin %>% 
+  group_by(id) %>% 
+  arrange(id, date) %>% 
+  slice_head(n = 1) %>% 
+  rename(t0 = date)
+```
+
+Note that the above method does NOT handle the situation when there are two different drugs on the same date that happen to be the minimum date. To handle this, we can use `filter` along with `group_by`, `ungroup`, to achieve this,
+
+
+```{r, eval = FALSE}
+entry_trt <- antidiabetic %>%
+  group_by(id) %>%
+  filter(date == min(date)) %>%
+  ungroup() %>%
+  rename(t0 = date)
+```
+
+
+## Dealing with Time Related Manipulation
+
+When dealing with time related manipulation, we use the package `lubridate`, below is an example of filtering within a look back period,
+
+```{r, eval = FALSE}
+# Selecting patienet who has diagnosis within 6 month before t0
+# for date arithmetic
+library(lubridate)  
+
+ids_pcos <- medcode_pcos %>%
+  filter(date >= (t0 %m-% months(6)) & date < t0) %>% distinct(id)
+```
+
+Some other common date related operations are,
+
+```{r, eval = FALSE}
+# generate sequence of dates
+seq_dates <- seq(from = t0, to = eof, by = "1 month")
+
+# find last day of the month
+last_day <- ceiling_date(x, unit = "month") - days(1)
+
+# find specific date of each month
+date_15 <- make_date(year(x), month(x), 15)
+```
+
+## Merging data
+
+In terms of merging data, `left_join` are commonly used, 
+
+```{r, eval = FALSE}
+# Merging dosage information from CPRD lookup "dosage" to data
+
+antihypertensive_dosage <- antihypertensive %>% left_join(dosage, by = "dosageid")
+```
+
+When merging multiple prescriptions or comorbidities as binary, `as.integer` along with `%in%` is a concise way to do it,
+
+```{r, eval = FALSE}
+# Merge cohort with alcohol and pcos by id; keep only records from cohort;
+# create flags indicating presence in alcohol and pcos datasets
+
+cohort_covar <- cohort %>%
+  mutate(
+    alcohol = as.integer(id %in% alcohol$id),
+    pcos    = as.integer(id %in% pcos$id)
+    )
+```
+
+# Tips for Analysis
+
+- Always parse **dates** carefully.
+
+
+# References
+
+- [CPRD Aurum Data Specification verson 2.7, January 22, 2022 ](https://www.cprd.com/sites/default/files/2022-02/CPRD%20Aurum%20Data%20Specification%20v2.7%20%28002%29.pdf)
+
+---
+
+*This is a very basic tutorial, it may subject to change depending on the project. It is recommended to read through the Data Specification for advanced manipulation.*
