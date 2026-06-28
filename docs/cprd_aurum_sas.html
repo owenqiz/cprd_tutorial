@@ -11,11 +11,10 @@
 
 <meta name="author" content="ZHANG Qi" />
 
-<meta name="date" content="2025-08-06" />
 
 <title>CPRD Aurum Tutorial with SAS</title>
 
-<script src="site_libs/header-attrs-2.29/header-attrs.js"></script>
+<script src="site_libs/header-attrs-2.31/header-attrs.js"></script>
 <script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
@@ -346,7 +345,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">CPRD Aurum Tutorial with SAS</h1>
 <h4 class="author">ZHANG Qi</h4>
-<h4 class="date">August 06, 2025</h4>
+<h4 class="date">六月 28, 2026</h4>
 
 </div>
 
@@ -772,7 +771,11 @@ SELECT a.*, d.* FROM antihypertensive AS a LEFT JOIN Def.Dosage AS d
 ON a.dosageid = d.dosageid;
 QUIT;</code></pre>
 <p>When merging multiple prescriptions or comorbidities as binary,
-<code>DATA</code> method is preferred.</p>
+<code>DATA</code> method is preferred. Medications or comorbidities may
+be in multiple file or in one file, if they come from multiple file, we
+use <code>merge</code>. If they all come from one file with different
+class, we can add a flag and use transpose to do multiple category in
+one shot.</p>
 <pre class="sas"><code>/* 
 Merge cohort with alcohol and pcos by id; keep only records from cohort;
 create flags indicating presence in alcohol (a) and pcos (p) datasets
@@ -784,6 +787,21 @@ alcohol = a;
 pcos = p;
 RUN;
 
+DATA cohort_covar; SET  cohort_covar; 
+IF alcohol = . THEN alcohol = 0;
+IF pcos = . THEN pcos = 0;
+RUN;
+
+/*
+Suppose comorbidities contains more than one disease in a data, say, alcohol, 
+pcos in one file, then we use transpose to do multiple class in a time.
+*/
+
+PROC SORT DATA = comorb NODUPKEY; by id class; RUN;
+DATA comorb; SET comorb; flag = 1; RUN;
+PROC TRANSPOSE DATA = comorb OUT = comorb_wide; BY id; ID class; VAR flag; RUN;
+
+DATA cohort_covar; MERGE cohort(in = c) comorb_wide(in = v); BY id; IF c; RUN;
 DATA cohort_covar; SET  cohort_covar; 
 IF alcohol = . THEN alcohol = 0;
 IF pcos = . THEN pcos = 0;

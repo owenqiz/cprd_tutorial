@@ -11,6 +11,7 @@
 
 <meta name="author" content="ZHANG Qi" />
 
+<meta name="date" content="2025-08-18" />
 
 <title>CPRD GOLD Tutorial with R</title>
 
@@ -345,7 +346,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">CPRD GOLD Tutorial with R</h1>
 <h4 class="author">ZHANG Qi</h4>
-<h4 class="date">六月 28, 2026</h4>
+<h4 class="date">August 18, 2025</h4>
 
 </div>
 
@@ -701,9 +702,9 @@ the value and the unit for the corresponding <code>entity</code>.</p>
 <p>For therapy, we usually need the treatment duration related
 information if we need to perform as treated method and eof due to
 discontinuation. If we do initial filtering, we find patients that meet
-specific criterion, so we don’t specify id. When filtering during
-exclusion, we exclude patient who has prescribed specific drugs, and
-that we need id. Therefore, in the function, we also need another
+specific criterion, so we do not specify <code>id</code>. When filtering
+during exclusion, we exclude patient who has prescribed specific drugs,
+and that we need id. Therefore, in the function, we also need another
 argument <code>pat_tbl</code> say we need
 <code>inner_join(pat_tbl, by = "id")</code> as well.</p>
 <pre class="r"><code># This function extracts therapy records for specific drugs from a series of files.
@@ -726,10 +727,10 @@ drug &lt;- function(n_ther, def_tbl, pat_tbl, data_name, path = &quot;.&quot;) {
   
   # Assign to global environment
   assign(data_name, final_df, envir = .GlobalEnv)
-}</code></pre>
-<p>Note <code>dosageid</code> is often used to along with the lookup
-file <code>common_dosage.txt</code> to work along with qty, quantiunit,
-duration to determine the treatment duration.</p>
+}
+
+# example call function
+drug(n_ther = 2, def_tbl = antidiabetic, pat_tbl = patient, data_name = &quot;antidiabetic_rx&quot;)</code></pre>
 </div>
 </div>
 <div id="frequently-used-programs" class="section level1">
@@ -778,11 +779,20 @@ date_15 &lt;- make_date(year(x), month(x), 15)</code></pre>
 </div>
 <div id="merging-data" class="section level2">
 <h2>Merging data</h2>
-<p>In terms of merging data, <code>left_join</code> are commonly
+<p>Merging data is used mainly in 2 situation, one is to combine
+existing dataset according to certain keys, another is performing
+exclusion step, where we exclude certain patients according a list of
+ids.</p>
+<p>In <code>dplyr</code> we can use various join functions to complete
+the task, <code>left_join</code> and <code>anti_join</code> are commonly
 used,</p>
 <pre class="r"><code># Merging dosage information from CPRD lookup &quot;dosage&quot; to data
 
-antihypertensive_dosage &lt;- antihypertensive %&gt;% left_join(dosage, by = &quot;dosageid&quot;)</code></pre>
+antihypertensive_dosage &lt;- antihypertensive %&gt;% left_join(dosage, by = &quot;dosageid&quot;)
+
+# Exclude patients with id in dialysis_ids to output
+
+pat_dialysis_exclude &lt;- patient %&gt;% anti_join(dialysis_ids, by = &#39;id&#39;)</code></pre>
 <p>When merging multiple prescriptions or comorbidities as binary,
 <code>as.integer</code> along with <code>%in%</code> is a concise way to
 do it,</p>

@@ -1,8 +1,9 @@
 ---
 title: "CPRD Aurum Tutorial with R"
-date: "`r format(Sys.time(), '%B %d, %Y')`"
-#date: "August 18, 2025"
+# date: "`r format(Sys.time(), '%B %d, %Y')`"
+date: "August 18, 2025"
 author: "ZHANG Qi"
+output:
 ---
 
 The **CPRD Aurum** (Clinical Practice Research Datalink Aurum is a UK-based primary care electronic health record (EHR) dataset. It captures detailed longitudinal patient-level information collected from general practices, derived from **EMIS** Web GP software systems.
@@ -131,7 +132,7 @@ sick_code(n_con = 2, n_obs = 2,
 ## Prescription (Therapy)
 
 For therapy, we usually need the treatment duration related information if we need to perform as treated method and eof due to discontinuation.
-If we do initial filtering, we find patients that meet specific criterion, so we don't specify id. 
+If we do initial filtering, we find patients that meet specific criterion, so we do not specify `id`. 
 When filtering during exclusion, we exclude patient who has prescribed specific drugs, and that we need id. Therefore, in the function, we also need another argument `pat_tbl` say we need `inner_join(pat_tbl, by = "id") ` as well.
 
 ```{r, eval = FALSE}
@@ -157,6 +158,9 @@ drug <- function(n_ther, def_tbl, data_name, path = ".") {
   # Assign to global environment
   assign(data_name, final_df, envir = .GlobalEnv)
 }
+
+# example call function
+drug(n_ther = 2, def_tbl = antidiabetic, pat_tbl = patient, data_name = "antidiabetic_rx")
 ```
 
 # Frequently Used Programs

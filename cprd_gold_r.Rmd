@@ -1,7 +1,7 @@
 ---
 title: "CPRD GOLD Tutorial with R"
-date: "`r format(Sys.time(), '%B %d, %Y')`"
-#date: "August 18, 2025"
+# date: "`r format(Sys.time(), '%B %d, %Y')`"
+date: "August 18, 2025"
 author: "ZHANG Qi"
 ---
 
@@ -228,7 +228,7 @@ Note that the desired value of the clinical measurement may be in different data
 ## Prescription (Therapy)
 
 For therapy, we usually need the treatment duration related information if we need to perform as treated method and eof due to discontinuation.
-If we do initial filtering, we find patients that meet specific criterion, so we don't specify id. 
+If we do initial filtering, we find patients that meet specific criterion, so we do not specify `id`. 
 When filtering during exclusion, we exclude patient who has prescribed specific drugs, and that we need id. Therefore, in the function, we also need another argument `pat_tbl` say we need `inner_join(pat_tbl, by = "id") ` as well.
 
 ```{r, eval = FALSE}
@@ -254,9 +254,10 @@ drug <- function(n_ther, def_tbl, pat_tbl, data_name, path = ".") {
   # Assign to global environment
   assign(data_name, final_df, envir = .GlobalEnv)
 }
-```
 
-Note `dosageid` is often used to along with the lookup file `common_dosage.txt` to work along with qty, quantiunit, duration to determine the treatment duration.
+# example call function
+drug(n_ther = 2, def_tbl = antidiabetic, pat_tbl = patient, data_name = "antidiabetic_rx")
+```
 
 # Frequently Used Programs
 
@@ -312,12 +313,19 @@ date_15 <- make_date(year(x), month(x), 15)
 
 ## Merging data
 
-In terms of merging data, `left_join` are commonly used, 
+Merging data is used mainly in 2 situation, one is to combine existing dataset according to certain keys, another is performing exclusion step, where we exclude certain patients according a list of ids. 
+
+In `dplyr` we can use various join functions to complete the task, `left_join` and `anti_join` are commonly used, 
 
 ```{r, eval = FALSE}
 # Merging dosage information from CPRD lookup "dosage" to data
 
 antihypertensive_dosage <- antihypertensive %>% left_join(dosage, by = "dosageid")
+
+# Exclude patients with id in dialysis_ids to output
+
+pat_dialysis_exclude <- patient %>% anti_join(dialysis_ids, by = 'id')
+
 ```
 
 When merging multiple prescriptions or comorbidities as binary, `as.integer` along with `%in%` is a concise way to do it,
@@ -336,7 +344,6 @@ cohort_covar <- cohort %>%
 # Tips for Analysis
 
 - Always parse **dates** carefully.
-
 
 # References
 

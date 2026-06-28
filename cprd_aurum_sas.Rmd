@@ -1,7 +1,7 @@
 ---
 title: "CPRD Aurum Tutorial with SAS"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
-#date: "August 18, 2025"
+# date: "August 18, 2025"
 author: "ZHANG Qi"
 ---
 
@@ -340,7 +340,7 @@ SELECT a.*, d.* FROM antihypertensive AS a LEFT JOIN Def.Dosage AS d
 ON a.dosageid = d.dosageid;
 QUIT;
 ```
-When merging multiple prescriptions or comorbidities as binary, `DATA` method is preferred.
+When merging multiple prescriptions or comorbidities as binary, `DATA` method is preferred. Medications or comorbidities may be in multiple file or in one file, if they come from multiple file, we use `merge`. If they all come from one file with different class, we can add a flag and use transpose to do multiple category in one shot.
 
 ```sas
 /* 
@@ -354,6 +354,21 @@ alcohol = a;
 pcos = p;
 RUN;
 
+DATA cohort_covar; SET  cohort_covar; 
+IF alcohol = . THEN alcohol = 0;
+IF pcos = . THEN pcos = 0;
+RUN;
+
+/*
+Suppose comorbidities contains more than one disease in a data, say, alcohol, 
+pcos in one file, then we use transpose to do multiple class in a time.
+*/
+
+PROC SORT DATA = comorb NODUPKEY; by id class; RUN;
+DATA comorb; SET comorb; flag = 1; RUN;
+PROC TRANSPOSE DATA = comorb OUT = comorb_wide; BY id; ID class; VAR flag; RUN;
+
+DATA cohort_covar; MERGE cohort(in = c) comorb_wide(in = v); BY id; IF c; RUN;
 DATA cohort_covar; SET  cohort_covar; 
 IF alcohol = . THEN alcohol = 0;
 IF pcos = . THEN pcos = 0;
