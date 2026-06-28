@@ -3,14 +3,6 @@ title: "CPRD GOLD Tutorial with R"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 #date: "August 18, 2025"
 author: "ZHANG Qi"
-output:
-  html_document:
-    toc: true
-    toc_depth: 2
-    theme: cerulean
-  pdf_document: default
-  highlight: kate  # default, tango, pygments, etc.
-  word_document: default
 ---
 
 The **CPRD GOLD** (Clinical Practice Research Datalink GOLD) is a UK-based anonymized primary care electronic health record (EHR) dataset derived from general practices (GP) that use the **Vision** GP system. CPRD GOLD is preferred for longitudinal research, especially for studies starting before 2015. 

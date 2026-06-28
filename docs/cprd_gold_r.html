@@ -11,11 +11,10 @@
 
 <meta name="author" content="ZHANG Qi" />
 
-<meta name="date" content="2025-08-06" />
 
 <title>CPRD GOLD Tutorial with R</title>
 
-<script src="site_libs/header-attrs-2.29/header-attrs.js"></script>
+<script src="site_libs/header-attrs-2.31/header-attrs.js"></script>
 <script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
@@ -346,7 +345,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">CPRD GOLD Tutorial with R</h1>
 <h4 class="author">ZHANG Qi</h4>
-<h4 class="date">August 06, 2025</h4>
+<h4 class="date">六月 28, 2026</h4>
 
 </div>
 
@@ -629,9 +628,43 @@ to obtain their values, we may need both go through
 <p>Recall that for <code>Additional</code> file does NOT contain date
 info, so we need <code>entity</code> and <code>acdid</code> to linked
 with <code>Clinical</code> to obtain date information.</p>
-<pre class="r"><code># Universal function to extract medical_code and data in test.
-# It filters records on a definition table and joins them with patient data.
-# It combines all matching records and deletes the temporary tables.
+<pre class="r"><code># Two sources to obtain clinical measurement
+# 1. clinical with {medical_code, entity, acdid} link with additional on {entity, acdid}
+# 2. test with {medical_code, entity, data1 - data8}
+
+sick_code_cli &lt;- function(n_cli, def_tbl, pat_tbl, data_name, path = &quot;.&quot;) {
+  
+  # Read and process Clinical datasets
+  tst_list &lt;- map_dfr(1:n_tst, function(i) {
+    read_sas(file.path(path, paste0(&quot;test&quot;, i, &quot;.sas7bdat&quot;))) %&gt;%
+      inner_join(def_tbl, by = &quot;medical_code&quot;) %&gt;%
+      inner_join(pat_tbl, by = &quot;id&quot;) %&gt;%
+      select(id, date, medical_code, entity)
+    # if the basic patient is built, we may include t0 as well
+  })
+  
+  # Combine and arrange
+  final_df &lt;- bind_rows(tst_list) %&gt;%
+    arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+
+sick_code_add &lt;- function(n_add, in_data, data_name, path = &quot;.&quot;) {
+
+  # Read SAS datasets
+  add_list &lt;- map(paste0(&quot;additional&quot;, 1:n_add, &quot;.sas7bdat&quot;), read_sas)
+  
+  # Join them all sequentially
+  final_df &lt;- reduce(add_list,
+    ~ left_join(.x, .y, by = c(&quot;id&quot;, &quot;entity&quot;, &quot;acdid&quot;)),
+    .init = in_data
+  )
+  
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+
 
 sick_code_tst &lt;- function(n_tst, def_tbl, pat_tbl, data_name, path = &quot;.&quot;) {
   
@@ -652,25 +685,15 @@ sick_code_tst &lt;- function(n_tst, def_tbl, pat_tbl, data_name, path = &quot;.&
   assign(data_name, final_df, envir = .GlobalEnv)
 }
 
-# Universal function to link between clinical and additional
-# Should linked by id, entity, acdid
-# THIS NEED TO RE-WRITE
-sick_code_add &lt;- function(n_add, in_data, data_name, path = &quot;.&quot;) {
+# for proteinuria, we extract from clinical and test seperately
+sick_code_cli(n_cli = 2, def_tbl = pu_dx, pat_tbl = pat_pu, data = &#39;pat_pu_cli&#39;)
+sick_code_add(n_add = 2, in_data = pat_pu_cli, data_name = &quot;pat_pu_add&quot;)
 
-  # Read SAS datasets
-  add_list &lt;- map(paste0(&quot;additional&quot;, 1:n_add, &quot;.sas7bdat&quot;), read_sas)
-  
-  # Join them all sequentially
-  final_df &lt;- reduce(add_list,
-    ~ left_join(.x, .y, by = c(&quot;id&quot;, &quot;entity&quot;, &quot;acdid&quot;)),
-    .init = in_data
-  )
-  
-  assign(data_name, final_df, envir = .GlobalEnv)
-}
-
-sick_code_add(n_add = 2, 
-              in_data = pat_pu, data_name = &quot;pat_pu_add&quot;)</code></pre>
+sick_code_tst(n_tst = 2, def_tbl = pu_lab, pat_tbl = pat_pu, data_name = &#39;pat_pu_tst&#39;)</code></pre>
+<p>Note that the desired value of the clinical measurement may be in
+different data cell (data1 - data8) depending on the
+<code>entity</code>, we need to go through the lookup table to determine
+the value and the unit for the corresponding <code>entity</code>.</p>
 </div>
 </div>
 <div id="prescription-therapy" class="section level2">
@@ -686,15 +709,15 @@ argument <code>pat_tbl</code> say we need
 <pre class="r"><code># This function extracts therapy records for specific drugs from a series of files.
 # It filters records using a provided list of product codes, combines the results
 # into a single dataset, and deletes the temporary tables.
-# if pat_tbl is used (uncomment), we need a new argument to include patient info
+# for extracting t0, we may not need pat_tbl
 
-drug &lt;- function(n_ther, def_tbl, data_name, path = &quot;.&quot;) {
+drug &lt;- function(n_ther, def_tbl, pat_tbl, data_name, path = &quot;.&quot;) {
   
   # Read and process Therapy datasets
   ther_list &lt;- map_dfr(1:n_ther, function(i) {
     read_sas(file.path(path, paste0(&quot;therapy&quot;, i, &quot;.sas7bdat&quot;))) %&gt;%
       inner_join(def_tbl, by = &quot;product_code&quot;) %&gt;%
-      # inner_join(pat_tbl, by = &quot;id&quot;) %&gt;%
+      inner_join(pat_tbl, by = &quot;id&quot;) %&gt;%
       select(id, date, product_code, quantunit, duration, qty, dosageid)
   })
   
@@ -704,6 +727,9 @@ drug &lt;- function(n_ther, def_tbl, data_name, path = &quot;.&quot;) {
   # Assign to global environment
   assign(data_name, final_df, envir = .GlobalEnv)
 }</code></pre>
+<p>Note <code>dosageid</code> is often used to along with the lookup
+file <code>common_dosage.txt</code> to work along with qty, quantiunit,
+duration to determine the treatment duration.</p>
 </div>
 </div>
 <div id="frequently-used-programs" class="section level1">
