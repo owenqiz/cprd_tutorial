@@ -3,6 +3,14 @@ title: "CPRD GOLD Tutorial with R"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 #date: "August 18, 2025"
 author: "ZHANG Qi"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: cerulean
+  pdf_document: default
+  highlight: kate  # default, tango, pygments, etc.
+  word_document: default
 ---
 
 The **CPRD GOLD** (Clinical Practice Research Datalink GOLD) is a UK-based anonymized primary care electronic health record (EHR) dataset derived from general practices (GP) that use the **Vision** GP system. CPRD GOLD is preferred for longitudinal research, especially for studies starting before 2015. 
@@ -158,9 +166,43 @@ Recall that for `Additional` file does NOT contain date info, so we need `entity
 
 
 ```{r, eval = FALSE}
-# Universal function to extract medical_code and data in test.
-# It filters records on a definition table and joins them with patient data.
-# It combines all matching records and deletes the temporary tables.
+# Two sources to obtain clinical measurement
+# 1. clinical with {medical_code, entity, acdid} link with additional on {entity, acdid}
+# 2. test with {medical_code, entity, data1 - data8}
+
+sick_code_cli <- function(n_cli, def_tbl, pat_tbl, data_name, path = ".") {
+  
+  # Read and process Clinical datasets
+  tst_list <- map_dfr(1:n_tst, function(i) {
+    read_sas(file.path(path, paste0("test", i, ".sas7bdat"))) %>%
+      inner_join(def_tbl, by = "medical_code") %>%
+      inner_join(pat_tbl, by = "id") %>%
+      select(id, date, medical_code, entity)
+    # if the basic patient is built, we may include t0 as well
+  })
+  
+  # Combine and arrange
+  final_df <- bind_rows(tst_list) %>%
+    arrange(id, date)
+  
+  # Assign to global environment
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+
+sick_code_add <- function(n_add, in_data, data_name, path = ".") {
+
+  # Read SAS datasets
+  add_list <- map(paste0("additional", 1:n_add, ".sas7bdat"), read_sas)
+  
+  # Join them all sequentially
+  final_df <- reduce(add_list,
+    ~ left_join(.x, .y, by = c("id", "entity", "acdid")),
+    .init = in_data
+  )
+  
+  assign(data_name, final_df, envir = .GlobalEnv)
+}
+
 
 sick_code_tst <- function(n_tst, def_tbl, pat_tbl, data_name, path = ".") {
   
@@ -181,29 +223,15 @@ sick_code_tst <- function(n_tst, def_tbl, pat_tbl, data_name, path = ".") {
   assign(data_name, final_df, envir = .GlobalEnv)
 }
 
-# Universal function to link between clinical and additional
-# Should linked by id, entity, acdid
-# THIS NEED TO RE-WRITE
-sick_code_add <- function(n_add, in_data, data_name, path = ".") {
+# for proteinuria, we extract from clinical and test seperately
+sick_code_cli(n_cli = 2, def_tbl = pu_dx, pat_tbl = pat_pu, data = 'pat_pu_cli')
+sick_code_add(n_add = 2, in_data = pat_pu_cli, data_name = "pat_pu_add")
 
-  # Read SAS datasets
-  add_list <- map(paste0("additional", 1:n_add, ".sas7bdat"), read_sas)
-  
-  # Join them all sequentially
-  final_df <- reduce(add_list,
-    ~ left_join(.x, .y, by = c("id", "entity", "acdid")),
-    .init = in_data
-  )
-  
-  assign(data_name, final_df, envir = .GlobalEnv)
-}
-
-sick_code_add(n_add = 2, 
-              in_data = pat_pu, data_name = "pat_pu_add")
-
-
+sick_code_tst(n_tst = 2, def_tbl = pu_lab, pat_tbl = pat_pu, data_name = 'pat_pu_tst')
 
 ```
+
+Note that the desired value of the clinical measurement may be in different data cell (data1 - data8) depending on the `entity`, we need to go through the lookup table to determine the value and the unit for the corresponding `entity`.
 
 ## Prescription (Therapy)
 
@@ -216,15 +244,15 @@ When filtering during exclusion, we exclude patient who has prescribed specific 
 # This function extracts therapy records for specific drugs from a series of files.
 # It filters records using a provided list of product codes, combines the results
 # into a single dataset, and deletes the temporary tables.
-# if pat_tbl is used (uncomment), we need a new argument to include patient info
+# for extracting t0, we may not need pat_tbl
 
-drug <- function(n_ther, def_tbl, data_name, path = ".") {
+drug <- function(n_ther, def_tbl, pat_tbl, data_name, path = ".") {
   
   # Read and process Therapy datasets
   ther_list <- map_dfr(1:n_ther, function(i) {
     read_sas(file.path(path, paste0("therapy", i, ".sas7bdat"))) %>%
       inner_join(def_tbl, by = "product_code") %>%
-      # inner_join(pat_tbl, by = "id") %>%
+      inner_join(pat_tbl, by = "id") %>%
       select(id, date, product_code, quantunit, duration, qty, dosageid)
   })
   
@@ -235,6 +263,8 @@ drug <- function(n_ther, def_tbl, data_name, path = ".") {
   assign(data_name, final_df, envir = .GlobalEnv)
 }
 ```
+
+Note `dosageid` is often used to along with the lookup file `common_dosage.txt` to work along with qty, quantiunit, duration to determine the treatment duration.
 
 # Frequently Used Programs
 
